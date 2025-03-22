@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Future City</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Poppins', sans-serif;
+      background: #1a1a2e;
+      color: white;
+    }
+    #gameCanvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    #ui h1 {
+      font-size: 24px;
+      margin: 0;
+      color: #00ffcc;
+    }
+    #ui p {
+      margin: 5px 0;
+      font-size: 14px;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    #controls button {
+      display: block;
+      margin: 5px 0;
+      padding: 8px;
+      background: #00ffcc;
+      color: black;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #controls button:hover {
+      background: #00ccff;
+    }
+    #namePrompt {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+    #namePrompt input {
+      padding: 10px;
+      margin: 10px;
+      border-radius: 5px;
+      border: none;
+    }
+    #namePrompt button {
+      padding: 10px 20px;
+      background: #00ffcc;
+      color: black;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #citizenFeedback {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Name Prompt -->
+  <div id="namePrompt">
+    <h2>Name Your City</h2>
+    <input type="text" id="cityNameInput" placeholder="Enter city name">
+    <button onclick="startGame()">Start Building</button>
+  </div>
+
+  <!-- Game Canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- UI -->
+  <div id="ui">
+    <h1 id="cityName">City Name</h1>
+    <p>Revenue: $<span id="revenue">0</span></p>
+    <p>Pollution: <span id="pollution">0</span>%</p>
+    <p>Happiness: <span id="happiness">50</span>%</p>
+    <p>City Lifespan: <span id="lifespan">100</span> years</p>
+  </div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <button onclick="setBuildingType('road')">Add Road</button>
+    <button onclick="setBuildingType('hospital')">Add Hospital</button>
+    <button onclick="setBuildingType('factory')">Add Factory</button>
+    <button onclick="setBuildingType('bank')">Add Bank</button>
+    <button onclick="setBuildingType('park')">Add Park</button>
+    <button onclick="setBuildingType('forest')">Add Forest</button>
+    <button onclick="setBuildingType('supermarket')">Add Supermarket</button>
+    <button onclick="setBuildingType('mall')">Add Mall</button>
+  </div>
+
+  <!-- Citizen Feedback -->
+  <div id="citizenFeedback"></div>
+
+  <!-- Three.js and GLTFLoader -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script>
+    // Game State
+    let scene, camera, renderer, grid, selectedBuildingType = 'road';
+    let cityName = '';
+    let revenue = 0, pollution = 0, happiness = 50;
+    let gridSize = 20;
+    let cellSize = 1;
+    let gridData = Array(gridSize).fill().map(() => Array(gridSize).fill(null));
+    let cars = [];
+    let buses = [];
+    let models = {};
+
+    // Start Game
+    function startGame() {
+      cityName = document.getElementById('cityNameInput').value || 'Future City';
+      document.getElementById('cityName').textContent = cityName;
+      document.getElementById('namePrompt').style.display = 'none';
+      init();
+      loadModels();
+      animate();
+      startGameLoop();
+    }
+
+    // Initialize Three.js Scene
+    function init() {
+      // Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a2e);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(5, 10, 5);
+      camera.lookAt(0, 0, 0);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // Grid
+      grid = new THREE.Group();
+      for (let x = 0; x < gridSize; x++) {
+        for (let z = 0; z < gridSize; z++) {
+          const geometry = new THREE.PlaneGeometry(cellSize, cellSize);
+          const material = new THREE.MeshBasicMaterial({ color: 0x2a2a4e, side: THREE.DoubleSide });
+          const plane = new THREE.Mesh(geometry, material);
+          plane.rotation.x = Math.PI / 2;
+          plane.position.set(x - gridSize / 2 + cellSize / 2, 0, z - gridSize / 2 + cellSize / 2);
+          grid.add(plane);
+        }
+      }
+      scene.add(grid);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+      directionalLight.position.set(5, 10, 5);
+      scene.add(directionalLight);
+
+      // Mouse Interaction
+      window.addEventListener('click', onMouseClick);
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    // Load 3D Models
+    function loadModels() {
+      const loader = new THREE.GLTFLoader();
+      const modelPaths = {
+        road: 'models/road.glb',
+        hospital: 'models/hospital.glb',
+        factory: 'models/factory.glb',
+        bank: 'models/bank.glb',
+        park: 'models/park.glb',
+        forest: 'models/forest.glb',
+        supermarket: 'models/supermarket.glb',
+        mall: 'models/mall.glb',
+        car: 'models/car.glb',
+        bus: 'models/bus.glb'
+      };
+
+      Object.keys(modelPaths).forEach(type => {
+        loader.load(
+          modelPaths[type],
+          (gltf) => {
+            models[type] = gltf.scene;
+            models[type].scale.set(0.2, 0.2, 0.2);
+            models[type].rotation.y = 0;
+            console.log(`${type} model loaded successfully`);
+          },
+          (progress) => {
+            console.log(`Loading ${type} model: ${(progress.loaded / progress.total * 100).toFixed(2)}%`);
+          },
+          (error) => {
+            console.error(`Error loading ${type} model:`, error);
+          }
+        );
+      });
+    }
+
+    // Set Building Type
+    function setBuildingType(type) {
+      selectedBuildingType = type;
+      console.log('Selected building type:', type);
+    }
+
+    // Mouse Click to Place Buildings
+    function onMouseClick(event) {
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(grid.children);
+      if (intersects.length > 0) {
+        const intersect = intersects[0];
+        const x = Math.floor(intersect.point.x + gridSize / 2);
+        const z = Math.floor(intersect.point.z + gridSize / 2);
+
+        if (x >= 0 && x < gridSize && z >= 0 && z < gridSize && !gridData[x][z]) {
+          placeBuilding(x, z, selectedBuildingType);
+        }
+      }
+    }
+
+    // Place Building
+    function placeBuilding(x, z, type) {
+      let mesh;
+      if (models[type]) {
+        mesh = models[type].clone();
+        mesh.position.set(x - gridSize / 2 + cellSize / 2, 1.0, z - gridSize / 2 + cellSize / 2);
+        scene.add(mesh);
+        console.log(`Added ${type} at position:`, mesh.position);
+      } else {
+        // Fallback to basic geometry if model not loaded
+        let geometry, material;
+        switch (type) {
+          case 'road':
+            geometry = new THREE.BoxGeometry(cellSize, 0.1, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0x555555 });
+            break;
+          case 'hospital':
+            geometry = new THREE.BoxGeometry(cellSize, 1, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0xff5555 });
+            break;
+          case 'factory':
+            geometry = new THREE.BoxGeometry(cellSize, 1.5, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0x888888 });
+            break;
+          case 'bank':
+            geometry = new THREE.BoxGeometry(cellSize, 1.2, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
+            break;
+          case 'park':
+            geometry = new THREE.BoxGeometry(cellSize, 0.3, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            break;
+          case 'forest':
+            geometry = new THREE.CylinderGeometry(0.3, 0.3, 1, 8);
+            material = new THREE.MeshBasicMaterial({ color: 0x228B22 });
+            break;
+          case 'supermarket':
+            geometry = new THREE.BoxGeometry(cellSize, 0.8, cellSize);
+            material = new THREE.MeshBasicMaterial({ color: 0x00BFFF });
+            break;
+          case 'mall':
+            geometry = new THREE.BoxGeometry(cellSize * 1.5, 1.5, cellSize * 1.5);
+            material = new THREE.MeshBasicMaterial({ color: 0xFF69B4 });
+            break;
+        }
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(x - gridSize / 2 + cellSize / 2, mesh.geometry.parameters.height / 2, z - gridSize / 2 + cellSize / 2);
+        scene.add(mesh);
+        console.log(`Added fallback ${type} at position:`, mesh.position);
+      }
+
+      gridData[x][z] = type;
+
+      // Update Game Stats
+      switch (type) {
+        case 'hospital':
+          happiness += 5;
+          console.log('Hospital added: Happiness =', happiness);
+          break;
+        case 'factory':
+          revenue += 100;
+          pollution += 10;
+          happiness -= 5;
+          console.log('Factory added: Revenue =', revenue, 'Pollution =', pollution, 'Happiness =', happiness);
+          break;
+        case 'bank':
+          revenue += 150;
+          console.log('Bank added: Revenue =', revenue);
+          break;
+        case 'park':
+          pollution -= 5;
+          happiness += 5;
+          console.log('Park added: Pollution =', pollution, 'Happiness =', happiness);
+          break;
+        case 'forest':
+          pollution -= 10;
+          happiness += 3;
+          console.log('Forest added: Pollution =', pollution, 'Happiness =', happiness);
+          break;
+        case 'supermarket':
+          happiness += 3;
+          revenue += 50;
+          console.log('Supermarket added: Revenue =', revenue, 'Happiness =', happiness);
+          break;
+        case 'mall':
+          revenue += 200;
+          pollution += 5;
+          console.log('Mall added: Revenue =', revenue, 'Pollution =', pollution);
+          break;
+      }
+
+      // Add cars/buses on roads
+      if (type === 'road') {
+        if (Math.random() > 0.5) {
+          addCar(x, z);
+        } else {
+          addBus(x, z);
+        }
+      }
+
+      updateStats();
+    }
+
+    // Add Car
+    function addCar(x, z) {
+      let car;
+      if (models.car) {
+        car = models.car.clone();
+        car.scale.set(0.1, 0.1, 0.1);
+        car.position.set(x - gridSize / 2 + cellSize / 2, 1.0, z - gridSize / 2 + cellSize / 2);
+        scene.add(car);
+        console.log(`Added car at position:`, car.position);
+      } else {
+        const geometry = new THREE.BoxGeometry(0.3, 0.1, 0.5);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        car = new THREE.Mesh(geometry, material);
+        car.position.set(x - gridSize / 2 + cellSize / 2, 0.2, z - gridSize / 2 + cellSize / 2);
+        scene.add(car);
+        console.log(`Added fallback car at position:`, car.position);
+      }
+      cars.push({ mesh: car, x, z, direction: Math.random() > 0.5 ? 1 : -1 });
+      pollution += 2;
+      updateStats();
+    }
+
+    // Add Bus
+    function addBus(x, z) {
+      let bus;
+      if (models.bus) {
+        bus = models.bus.clone();
+        bus.scale.set(0.1, 0.1, 0.1);
+        bus.position.set(x - gridSize / 2 + cellSize / 2, 1.0, z - gridSize / 2 + cellSize / 2);
+        scene.add(bus);
+        console.log(`Added bus at position:`, bus.position);
+      } else {
+        const geometry = new THREE.BoxGeometry(0.4, 0.2, 0.8);
+        const material = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+        bus = new THREE.Mesh(geometry, material);
+        bus.position.set(x - gridSize / 2 + cellSize / 2, 0.3, z - gridSize / 2 + cellSize / 2);
+        scene.add(bus);
+        console.log(`Added fallback bus at position:`, bus.position);
+      }
+      buses.push({ mesh: bus, x, z, direction: Math.random() > 0.5 ? 1 : -1 });
+      pollution += 1;
+      happiness += 2;
+      updateStats();
+    }
+
+    // Update Stats
+    function updateStats() {
+      pollution = Math.max(0, Math.min(100, pollution));
+      happiness = Math.max(0, Math.min(100, happiness));
+      const lifespan = Math.max(10, 100 - pollution * 0.5 - (happiness < 50 ? (50 - happiness) * 0.5 : 0));
+
+      document.getElementById('revenue').textContent = revenue.toFixed(0);
+      document.getElementById('pollution').textContent = pollution.toFixed(1);
+      document.getElementById('happiness').textContent = happiness.toFixed(1);
+      document.getElementById('lifespan').textContent = Math.floor(lifespan);
+    }
+
+    // Game Loop
+    function startGameLoop() {
+      setInterval(() => {
+        // Random Events
+        if (Math.random() < 0.02 && pollution > 50) {
+          showFeedback("Flood Alert! High pollution caused a disaster!");
+          happiness -= 10;
+          revenue -= 200;
+        }
+
+        // Citizen Feedback
+        if (Math.random() < 0.05) {
+          if (pollution > 50) showFeedback("We need more parks to reduce pollution!");
+          else if (happiness < 50) showFeedback("Citizens are unhappy—build more hospitals!");
+          else showFeedback("Great job, Mayor! The city is thriving!");
+        }
+
+        // Unlock Eco-Tech
+        if (happiness > 80 && !document.getElementById('solarButton')) {
+          const button = document.createElement('button');
+          button.id = 'solarButton';
+          button.textContent = 'Add Solar Panel';
+          button.onclick = () => setBuildingType('solar');
+          document.getElementById('controls').appendChild(button);
+          showFeedback("Unlocked Solar Panels—build them to reduce pollution!");
+        }
+
+        updateStats();
+      }, 5000);
+    }
+
+    // Show Citizen Feedback
+    function showFeedback(message) {
+      const feedback = document.getElementById('citizenFeedback');
+      feedback.textContent = message;
+      feedback.style.display = 'block';
+      setTimeout(() => {
+        feedback.style.display = 'none';
+      }, 3000);
+    }
+
+    // Animate
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Move Cars and Buses
+      cars.forEach(car => {
+        car.x += 0.05 * car.direction;
+        if (car.x >= gridSize || car.x < 0) car.direction *= -1;
+        car.mesh.position.x = car.x - gridSize / 2 + cellSize / 2;
+      });
+      buses.forEach(bus => {
+        bus.z += 0.03 * bus.direction;
+        if (bus.z >= gridSize || bus.z < 0) bus.direction *= -1;
+        bus.mesh.position.z = bus.z - gridSize / 2 + cellSize / 2;
+      });
+
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
